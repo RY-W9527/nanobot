@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 from loguru import logger
+from nanobot.utils.token_tracker import (
+    estimate_usage_if_missing,
+    extract_usage,
+    log_token_event,
+    summarize_message_roles,
+    summarize_tool_schema,
+)
 
 if TYPE_CHECKING:
     from nanobot.providers.base import LLMProvider
@@ -91,6 +99,7 @@ class HeartbeatService:
         """
         from nanobot.utils.helpers import current_time_str
 
+        started = time.perf_counter()
         response = await self.provider.chat_with_retry(
             messages=[
                 {"role": "system", "content": "You are a heartbeat agent. Call the heartbeat tool to report your decision."},
@@ -102,6 +111,40 @@ class HeartbeatService:
             ],
             tools=_HEARTBEAT_TOOL,
             model=self.model,
+        )
+        heartbeat_messages = [
+            {"role": "system", "content": "You are a heartbeat agent. Call the heartbeat tool to report your decision."},
+            {"role": "user", "content": (
+                f"Current Time: {current_time_str(self.timezone)}\n\n"
+                "Review the following HEARTBEAT.md and decide whether there are active tasks.\n\n"
+                f"{content}"
+            )},
+        ]
+        log_token_event(
+            phase="heartbeat_decide",
+            provider=self.provider.__class__.__name__,
+            model=self.model,
+            usage=extract_usage(response),
+            latency_s=time.perf_counter() - started,
+            extra={
+                "message_count": 2,
+                "heartbeat_chars": len(content),
+                "tool_count": len(_HEARTBEAT_TOOL),
+                "step_outcome": "tool_call" if response.has_tool_calls else "final_answer",
+                "finish_reason": response.finish_reason,
+                "retry_happened": int(getattr(self.provider, "_last_retry_attempts", 0) or 0) > 0,
+                "retry_count": int(getattr(self.provider, "_last_retry_attempts", 0) or 0),
+                **summarize_message_roles(heartbeat_messages),
+                **summarize_tool_schema(_HEARTBEAT_TOOL),
+                **estimate_usage_if_missing(
+                    provider=self.provider,
+                    model=self.model,
+                    messages=heartbeat_messages,
+                    tools=_HEARTBEAT_TOOL,
+                    completion_text=response.content,
+                    has_exact_usage=extract_usage(response).get("total_tokens") is not None,
+                ),
+            },
         )
 
         if not response.has_tool_calls:
