@@ -210,6 +210,11 @@ class WebSearchTool(Tool):
                 for r in raw
             ]
             return _format_results(query, items, n)
+        except ModuleNotFoundError:
+            return (
+                "Error: DuckDuckGo search dependency missing (ddgs). "
+                "Install dependencies with `pip install -e .`."
+            )
         except Exception as e:
             logger.warning("DuckDuckGo search failed: {}", e)
             return f"Error: DuckDuckGo search failed ({e})"
@@ -301,7 +306,16 @@ class WebFetchTool(Tool):
 
     async def _fetch_readability(self, url: str, extract_mode: str, max_chars: int) -> Any:
         """Local fallback using readability-lxml."""
-        from readability import Document
+        try:
+            from readability import Document
+        except ModuleNotFoundError:
+            return json.dumps(
+                {
+                    "error": "readability-lxml dependency missing. Install with `pip install -e .`.",
+                    "url": url,
+                },
+                ensure_ascii=False,
+            )
 
         try:
             async with httpx.AsyncClient(

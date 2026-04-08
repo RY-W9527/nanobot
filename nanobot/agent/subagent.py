@@ -133,6 +133,8 @@ class SubagentManager:
                 telemetry_phase="subagent_loop",
                 telemetry_session_id=f"{origin['channel']}:{origin['chat_id']}",
                 telemetry_task_id=task_id,
+                telemetry_chat_id=origin["chat_id"],
+                telemetry_run_id=f"subagent:{task_id}",
                 telemetry_metadata={"subagent_label": label},
             ))
             if result.stop_reason == "tool_error":

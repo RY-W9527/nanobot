@@ -109,6 +109,7 @@ class AgentLoop:
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
         self._background_tasks: list[asyncio.Task] = []
         self._session_locks: dict[str, asyncio.Lock] = {}
+        self._session_run_seq: dict[str, int] = {}
         # NANOBOT_MAX_CONCURRENT_REQUESTS: <=0 means unlimited; default 3.
         _max = int(os.environ.get("NANOBOT_MAX_CONCURRENT_REQUESTS", "3"))
         self._concurrency_gate: asyncio.Semaphore | None = (
@@ -267,6 +268,9 @@ class AgentLoop:
             concurrent_tools=True,
             telemetry_phase="main_agent_loop",
             telemetry_session_id=f"{channel}:{chat_id}",
+            telemetry_task_id=message_id or (f"{channel}:{chat_id}" if channel == "cli" else None),
+            telemetry_chat_id=chat_id,
+            telemetry_run_id=f"{channel}:{chat_id}:{self._session_run_seq.get(f'{channel}:{chat_id}', 0)}",
             telemetry_metadata={"channel": channel, "chat_id": chat_id, "message_id": message_id},
         ))
         self._last_usage = result.usage
@@ -404,6 +408,7 @@ class AgentLoop:
                                 else ("cli", msg.chat_id))
             logger.info("Processing system message from {}", msg.sender_id)
             key = f"{channel}:{chat_id}"
+            self._session_run_seq[key] = self._session_run_seq.get(key, 0) + 1
             session = self.sessions.get_or_create(key)
             await self.memory_consolidator.maybe_consolidate_by_tokens(session)
             self._set_tool_context(channel, chat_id, msg.metadata.get("message_id"))
@@ -428,6 +433,7 @@ class AgentLoop:
         logger.info("Processing message from {}:{}: {}", msg.channel, msg.sender_id, preview)
 
         key = session_key or msg.session_key
+        self._session_run_seq[key] = self._session_run_seq.get(key, 0) + 1
         session = self.sessions.get_or_create(key)
 
         # Slash commands

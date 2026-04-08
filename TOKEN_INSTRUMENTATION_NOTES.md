@@ -71,6 +71,31 @@ Each event includes:
 If usage is unavailable, token fields remain `null` and `extra` carries approximate context stats
 (message count, serialized character length, tool count).
 
+## Extra telemetry richness added
+
+`extra` now also includes richer observability fields where available:
+
+- Prompt composition:
+  - role message counts (`system/user/assistant/tool/developer`)
+  - per-role serialized char counts
+  - tool-schema inclusion, schema char length, schema token estimate
+- Tool activity:
+  - model attempted tool call
+  - tool call count and tool names called
+  - tool observation count and char length
+  - per-tool execution events/status and short error details
+- Agent trajectory:
+  - loop iteration
+  - step outcome (`final_answer` / `tool_call` / `error` / `tool_error`)
+  - provider finish reason
+  - retry happened + retry count
+  - request mode (`direct_answer_only` / `tool_augmented`)
+- Bookkeeping:
+  - `session_id`, `chat_id`, `run_id`
+- Optional estimations when exact usage is absent:
+  - estimated prompt/completion/total tokens
+  - tokenizer source used for estimate
+
 ## Summary utility
 
 - `scripts/summarize_token_usage.py`
@@ -79,5 +104,11 @@ If usage is unavailable, token fields remain `null` and `extra` carries approxim
     - total recorded events
     - total prompt/completion/total tokens
     - totals by phase
+    - totals by model
+    - totals by session/task (top expensive runs)
+    - average tokens per loop-iteration bucket
+    - tool call counts by tool name
+    - tool error counts
+    - prompt/completion ratio
     - average total tokens per event
     - top sessions/tasks by total tokens

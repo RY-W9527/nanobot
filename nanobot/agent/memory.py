@@ -13,7 +13,13 @@ from typing import TYPE_CHECKING, Any, Callable
 from loguru import logger
 
 from nanobot.utils.helpers import ensure_dir, estimate_message_tokens, estimate_prompt_tokens_chain
-from nanobot.utils.token_tracker import extract_usage, log_token_event
+from nanobot.utils.token_tracker import (
+    estimate_usage_if_missing,
+    extract_usage,
+    log_token_event,
+    summarize_message_roles,
+    summarize_tool_schema,
+)
 
 if TYPE_CHECKING:
     from nanobot.providers.base import LLMProvider
@@ -157,6 +163,16 @@ class MemoryStore:
                     "message_count": len(chat_messages),
                     "serialized_message_chars": len(json.dumps(chat_messages, ensure_ascii=False)),
                     "consolidated_input_messages": len(messages),
+                    **summarize_message_roles(chat_messages),
+                    **summarize_tool_schema(_SAVE_MEMORY_TOOL),
+                    **estimate_usage_if_missing(
+                        provider=provider,
+                        model=model,
+                        messages=chat_messages,
+                        tools=_SAVE_MEMORY_TOOL,
+                        completion_text=response.content,
+                        has_exact_usage=extract_usage(response).get("total_tokens") is not None,
+                    ),
                 },
             )
 
@@ -182,6 +198,16 @@ class MemoryStore:
                         "message_count": len(chat_messages),
                         "serialized_message_chars": len(json.dumps(chat_messages, ensure_ascii=False)),
                         "consolidated_input_messages": len(messages),
+                        **summarize_message_roles(chat_messages),
+                        **summarize_tool_schema(_SAVE_MEMORY_TOOL),
+                        **estimate_usage_if_missing(
+                            provider=provider,
+                            model=model,
+                            messages=chat_messages,
+                            tools=_SAVE_MEMORY_TOOL,
+                            completion_text=response.content,
+                            has_exact_usage=extract_usage(response).get("total_tokens") is not None,
+                        ),
                     },
                 )
 

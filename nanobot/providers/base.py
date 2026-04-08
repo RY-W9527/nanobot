@@ -100,6 +100,7 @@ class LLMProvider(ABC):
         self.api_key = api_key
         self.api_base = api_base
         self.generation: GenerationSettings = GenerationSettings()
+        self._last_retry_attempts: int = 0
 
     @staticmethod
     def _sanitize_empty_content(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -293,13 +294,16 @@ class LLMProvider(ABC):
             response = await self._safe_chat_stream(**kw)
 
             if response.finish_reason != "error":
+                self._last_retry_attempts = max(0, attempt - 1)
                 return response
 
             if not self._is_transient_error(response.content):
                 stripped = self._strip_image_content(messages)
                 if stripped is not None:
                     logger.warning("Non-transient LLM error with image content, retrying without images")
+                    self._last_retry_attempts = attempt
                     return await self._safe_chat_stream(**{**kw, "messages": stripped})
+                self._last_retry_attempts = max(0, attempt - 1)
                 return response
 
             logger.warning(
@@ -309,6 +313,7 @@ class LLMProvider(ABC):
             )
             await asyncio.sleep(delay)
 
+        self._last_retry_attempts = len(self._CHAT_RETRY_DELAYS)
         return await self._safe_chat_stream(**kw)
 
     async def chat_with_retry(
@@ -344,13 +349,16 @@ class LLMProvider(ABC):
             response = await self._safe_chat(**kw)
 
             if response.finish_reason != "error":
+                self._last_retry_attempts = max(0, attempt - 1)
                 return response
 
             if not self._is_transient_error(response.content):
                 stripped = self._strip_image_content(messages)
                 if stripped is not None:
                     logger.warning("Non-transient LLM error with image content, retrying without images")
+                    self._last_retry_attempts = attempt
                     return await self._safe_chat(**{**kw, "messages": stripped})
+                self._last_retry_attempts = max(0, attempt - 1)
                 return response
 
             logger.warning(
@@ -360,6 +368,7 @@ class LLMProvider(ABC):
             )
             await asyncio.sleep(delay)
 
+        self._last_retry_attempts = len(self._CHAT_RETRY_DELAYS)
         return await self._safe_chat(**kw)
 
     @abstractmethod
