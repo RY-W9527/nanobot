@@ -6,9 +6,11 @@ LLM call to decide whether the result warrants notifying the user.
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from nanobot.utils.token_tracker import extract_usage, log_token_event
 
 if TYPE_CHECKING:
     from nanobot.providers.base import LLMProvider
@@ -63,6 +65,7 @@ async def evaluate_response(
     that important messages are never silently dropped.
     """
     try:
+        started = time.perf_counter()
         llm_response = await provider.chat_with_retry(
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
@@ -75,6 +78,19 @@ async def evaluate_response(
             model=model,
             max_tokens=256,
             temperature=0.0,
+        )
+        log_token_event(
+            phase="heartbeat_evaluate",
+            provider=provider.__class__.__name__,
+            model=model,
+            usage=extract_usage(llm_response),
+            latency_s=time.perf_counter() - started,
+            extra={
+                "message_count": 2,
+                "task_context_chars": len(task_context),
+                "response_chars": len(response),
+                "tool_count": len(_EVALUATE_TOOL),
+            },
         )
 
         if not llm_response.has_tool_calls:

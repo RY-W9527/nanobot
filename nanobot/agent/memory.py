@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import weakref
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from loguru import logger
 
 from nanobot.utils.helpers import ensure_dir, estimate_message_tokens, estimate_prompt_tokens_chain
+from nanobot.utils.token_tracker import extract_usage, log_token_event
 
 if TYPE_CHECKING:
     from nanobot.providers.base import LLMProvider
@@ -137,22 +139,50 @@ class MemoryStore:
 
         try:
             forced = {"type": "function", "function": {"name": "save_memory"}}
+            call_started = time.perf_counter()
             response = await provider.chat_with_retry(
                 messages=chat_messages,
                 tools=_SAVE_MEMORY_TOOL,
                 model=model,
                 tool_choice=forced,
             )
+            log_token_event(
+                phase="memory_consolidation",
+                provider=provider.__class__.__name__,
+                model=model,
+                usage=extract_usage(response),
+                latency_s=time.perf_counter() - call_started,
+                extra={
+                    "forced_tool_choice": "save_memory",
+                    "message_count": len(chat_messages),
+                    "serialized_message_chars": len(json.dumps(chat_messages, ensure_ascii=False)),
+                    "consolidated_input_messages": len(messages),
+                },
+            )
 
             if response.finish_reason == "error" and _is_tool_choice_unsupported(
                 response.content
             ):
                 logger.warning("Forced tool_choice unsupported, retrying with auto")
+                retry_started = time.perf_counter()
                 response = await provider.chat_with_retry(
                     messages=chat_messages,
                     tools=_SAVE_MEMORY_TOOL,
                     model=model,
                     tool_choice="auto",
+                )
+                log_token_event(
+                    phase="memory_consolidation",
+                    provider=provider.__class__.__name__,
+                    model=model,
+                    usage=extract_usage(response),
+                    latency_s=time.perf_counter() - retry_started,
+                    extra={
+                        "forced_tool_choice": "auto_retry",
+                        "message_count": len(chat_messages),
+                        "serialized_message_chars": len(json.dumps(chat_messages, ensure_ascii=False)),
+                        "consolidated_input_messages": len(messages),
+                    },
                 )
 
             if not response.has_tool_calls:

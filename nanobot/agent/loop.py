@@ -265,6 +265,9 @@ class AgentLoop:
             hook=_LoopHook(),
             error_message="Sorry, I encountered an error calling the AI model.",
             concurrent_tools=True,
+            telemetry_phase="main_agent_loop",
+            telemetry_session_id=f"{channel}:{chat_id}",
+            telemetry_metadata={"channel": channel, "chat_id": chat_id, "message_id": message_id},
         ))
         self._last_usage = result.usage
         if result.stop_reason == "max_iterations":
