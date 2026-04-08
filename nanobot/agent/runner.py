@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from nanobot.agent.hook import AgentHook, AgentHookContext
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.providers.base import LLMProvider, ToolCallRequest
+from nanobot.utils.token_tracker import extract_usage, log_token_event
 from nanobot.utils.helpers import build_assistant_message
 
 _DEFAULT_MAX_ITERATIONS_MESSAGE = (
@@ -34,6 +37,10 @@ class AgentRunSpec:
     max_iterations_message: str | None = None
     concurrent_tools: bool = False
     fail_on_tool_error: bool = False
+    telemetry_phase: str = "agent_loop"
+    telemetry_session_id: str | None = None
+    telemetry_task_id: str | None = None
+    telemetry_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -84,18 +91,39 @@ class AgentRunner:
                 async def _stream(delta: str) -> None:
                     await hook.on_stream(context, delta)
 
+                call_started = time.perf_counter()
                 response = await self.provider.chat_stream_with_retry(
                     **kwargs,
                     on_content_delta=_stream,
                 )
             else:
+                call_started = time.perf_counter()
                 response = await self.provider.chat_with_retry(**kwargs)
+            latency_s = time.perf_counter() - call_started
 
-            raw_usage = response.usage or {}
+            raw_usage = extract_usage(response)
             usage = {
-                "prompt_tokens": int(raw_usage.get("prompt_tokens", 0) or 0),
-                "completion_tokens": int(raw_usage.get("completion_tokens", 0) or 0),
+                "prompt_tokens": int(raw_usage.get("prompt_tokens") or 0),
+                "completion_tokens": int(raw_usage.get("completion_tokens") or 0),
             }
+            messages_text = json.dumps(messages, ensure_ascii=False, default=str)
+            log_token_event(
+                phase=spec.telemetry_phase,
+                provider=self.provider.__class__.__name__,
+                model=spec.model,
+                usage=raw_usage,
+                latency_s=latency_s,
+                session_id=spec.telemetry_session_id,
+                task_id=spec.telemetry_task_id,
+                step_id=iteration,
+                extra={
+                    "streaming": hook.wants_streaming(),
+                    "message_count": len(messages),
+                    "serialized_message_chars": len(messages_text),
+                    "tool_count": len(kwargs.get("tools") or []),
+                    **spec.telemetry_metadata,
+                },
+            )
             context.response = response
             context.usage = usage
             context.tool_calls = list(response.tool_calls)

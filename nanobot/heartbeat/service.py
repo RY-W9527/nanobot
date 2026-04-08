@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 from loguru import logger
+from nanobot.utils.token_tracker import extract_usage, log_token_event
 
 if TYPE_CHECKING:
     from nanobot.providers.base import LLMProvider
@@ -91,6 +93,7 @@ class HeartbeatService:
         """
         from nanobot.utils.helpers import current_time_str
 
+        started = time.perf_counter()
         response = await self.provider.chat_with_retry(
             messages=[
                 {"role": "system", "content": "You are a heartbeat agent. Call the heartbeat tool to report your decision."},
@@ -102,6 +105,18 @@ class HeartbeatService:
             ],
             tools=_HEARTBEAT_TOOL,
             model=self.model,
+        )
+        log_token_event(
+            phase="heartbeat_decide",
+            provider=self.provider.__class__.__name__,
+            model=self.model,
+            usage=extract_usage(response),
+            latency_s=time.perf_counter() - started,
+            extra={
+                "message_count": 2,
+                "heartbeat_chars": len(content),
+                "tool_count": len(_HEARTBEAT_TOOL),
+            },
         )
 
         if not response.has_tool_calls:
