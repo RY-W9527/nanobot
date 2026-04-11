@@ -51,6 +51,15 @@ class _FsTool(Tool):
     def _resolve(self, path: str) -> Path:
         return _resolve_path(path, self._workspace, self._allowed_dir, self._extra_allowed_dirs)
 
+    def _reject_skill_path(self, resolved: Path) -> None:
+        """Disallow skill file/directory writes to keep runtime deterministic."""
+        if resolved.name.upper() == "SKILL.MD":
+            raise PermissionError("Creating or editing SKILL.md is disabled by runtime policy")
+        if self._workspace:
+            skills_dir = (self._workspace / "skills").resolve()
+            if _is_under(resolved, skills_dir):
+                raise PermissionError("Writing under workspace/skills is disabled by runtime policy")
+
 
 # ---------------------------------------------------------------------------
 # read_file
@@ -183,6 +192,7 @@ class WriteFileTool(_FsTool):
             if content is None:
                 raise ValueError("Unknown content")
             fp = self._resolve(path)
+            self._reject_skill_path(fp)
             fp.parent.mkdir(parents=True, exist_ok=True)
             fp.write_text(content, encoding="utf-8")
             return f"Successfully wrote {len(content)} bytes to {fp}"
@@ -267,6 +277,7 @@ class EditFileTool(_FsTool):
                 raise ValueError("Unknown new_text")
 
             fp = self._resolve(path)
+            self._reject_skill_path(fp)
             if not fp.exists():
                 return f"Error: File not found: {path}"
 
