@@ -17,6 +17,8 @@ class SkillsLoader:
     Skills are markdown files (SKILL.md) that teach the agent how to use
     specific tools or perform certain tasks.
     """
+    _DISABLED_SKILLS = {"skill-creator", "clawhub"}
+    _ALLOW_WORKSPACE_SKILLS = False
 
     def __init__(self, workspace: Path, builtin_skills_dir: Path | None = None):
         self.workspace = workspace
@@ -35,8 +37,8 @@ class SkillsLoader:
         """
         skills = []
 
-        # Workspace skills (highest priority)
-        if self.workspace_skills.exists():
+        # Workspace skills (disabled by policy to keep runtime deterministic)
+        if self._ALLOW_WORKSPACE_SKILLS and self.workspace_skills.exists():
             for skill_dir in self.workspace_skills.iterdir():
                 if skill_dir.is_dir():
                     skill_file = skill_dir / "SKILL.md"
@@ -50,6 +52,8 @@ class SkillsLoader:
                     skill_file = skill_dir / "SKILL.md"
                     if skill_file.exists() and not any(s["name"] == skill_dir.name for s in skills):
                         skills.append({"name": skill_dir.name, "path": str(skill_file), "source": "builtin"})
+
+        skills = [s for s in skills if s["name"] not in self._DISABLED_SKILLS]
 
         # Filter by requirements
         if filter_unavailable:
@@ -66,10 +70,14 @@ class SkillsLoader:
         Returns:
             Skill content or None if not found.
         """
+        if name in self._DISABLED_SKILLS:
+            return None
+
         # Check workspace first
-        workspace_skill = self.workspace_skills / name / "SKILL.md"
-        if workspace_skill.exists():
-            return workspace_skill.read_text(encoding="utf-8")
+        if self._ALLOW_WORKSPACE_SKILLS:
+            workspace_skill = self.workspace_skills / name / "SKILL.md"
+            if workspace_skill.exists():
+                return workspace_skill.read_text(encoding="utf-8")
 
         # Check built-in
         if self.builtin_skills:
@@ -226,3 +234,5 @@ class SkillsLoader:
                 return metadata
 
         return None
+    _DISABLED_SKILLS = {"skill-creator", "clawhub"}
+    _ALLOW_WORKSPACE_SKILLS = False

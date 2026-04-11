@@ -154,6 +154,8 @@ class ExecTool(Tool):
         """Best-effort safety guard for potentially destructive commands."""
         cmd = command.strip()
         lower = cmd.lower()
+        if self._is_skill_write_attempt(lower):
+            return "Error: Writing/creating skill files is disabled by runtime policy"
 
         for pattern in self.deny_patterns:
             if re.search(pattern, lower):
@@ -183,6 +185,19 @@ class ExecTool(Tool):
                     return "Error: Command blocked by safety guard (path outside working dir)"
 
         return None
+
+    @staticmethod
+    def _is_skill_write_attempt(command_lower: str) -> bool:
+        """Detect attempts to create/edit skill files or workspace skill directories."""
+        skill_path_hit = "/skills/" in command_lower or "\\skills\\" in command_lower or "skill.md" in command_lower
+        if not skill_path_hit:
+            return False
+        mutating_markers = (
+            "touch ", "mkdir ", "cp ", "mv ", "tee ", "cat >",
+            "echo ", "printf ", "sed -i", "python ", "node ", "npx ",
+            "pip ", "uv ", "git clone ", "curl ", "wget ",
+        )
+        return any(marker in command_lower for marker in mutating_markers)
 
     @staticmethod
     def _extract_absolute_paths(command: str) -> list[str]:

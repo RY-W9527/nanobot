@@ -130,6 +130,12 @@ class SubagentManager:
                 max_iterations_message="Task completed but no final response was generated.",
                 error_message=None,
                 fail_on_tool_error=True,
+                telemetry_phase="subagent_loop",
+                telemetry_session_id=f"{origin['channel']}:{origin['chat_id']}",
+                telemetry_task_id=task_id,
+                telemetry_chat_id=origin["chat_id"],
+                telemetry_run_id=f"subagent:{task_id}",
+                telemetry_metadata={"subagent_label": label},
             ))
             if result.stop_reason == "tool_error":
                 await self._announce_result(
